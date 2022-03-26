@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -53,26 +54,24 @@ func init(){
 }
 
 func deleteEnvVars()(error){
-    out, err := exec.Command("heroku", "config", "-a", appName).CombinedOutput()
+    out, err := exec.Command("heroku", "config", "-a", appName, "--json").CombinedOutput()
     if err != nil{
         fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
         return errors.New(fmt.Sprintf("error getting currently set variables: %s", err))
     }
 
-    herokuOutput := strings.Split(string(out), "\n")
+    var herokuJSON map[string]string
 
-    // remove the first info line
-    herokuOutput = herokuOutput[1:]
-
-    // remove the last empty line
-    if len(herokuOutput[len(herokuOutput)-1]) == 0{
-        herokuOutput = herokuOutput[:len(herokuOutput)-1]
+    err = json.Unmarshal(out, &herokuJSON)
+    if err != nil{
+        fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
+        return errors.New(fmt.Sprintf("error unmarshaling currently set variables: %s", err))
     }
 
     unsetCommand := exec.Command("heroku", "config:unset", "-a", appName)
 
-    for _, variable := range herokuOutput{
-        unsetCommand.Args = append(unsetCommand.Args, strings.Split(variable, ":")[0])
+    for key := range herokuJSON{
+        unsetCommand.Args = append(unsetCommand.Args, key)
     }
 
     out, err = unsetCommand.CombinedOutput()
@@ -87,13 +86,19 @@ func deleteEnvVars()(error){
         fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
     }
 
-    // TODO: when setting vars there cannot be spaces between value and =
     if option == "unset-keep"{
-        err = os.WriteFile(saveFileName, []byte(strings.ReplaceAll(strings.Join(herokuOutput, "\n"), ":", "=")), 0666)
+        var fileOutputString string
+        for key, value := range herokuJSON{
+            fileOutputString += fmt.Sprintf("%s=%s\n", key, value)
+        }
+
+        fileOutputString = fileOutputString[:len(fileOutputString)-1]
+
+        err = os.WriteFile(saveFileName, []byte(fileOutputString), 0666)
         if err != nil{
             fmt.Printf("Error saving vars to file: %s\n", err)
         }else{
-            fmt.Println("\033[0;34mVars sucessfully unset!\033[0m")
+            fmt.Println("\033[0;34mUnset vars successfully saved!\033[0m")
         }
     }
 
@@ -111,7 +116,7 @@ func checkVar(variable *string)(error){
     }
 
     // name must only consist of uppercase letters, digits and _
-    isAlNumeric := regexp.MustCompile(`[a-zA-Z_]+[a-zA-Z0-9_]*`)
+    isAlNumeric := regexp.MustCompile(`^[a-zA-Z_]+[a-zA-Z0-9_]*$`)
     if !isAlNumeric.MatchString(variableSplit[0]){
         return errors.New("error in variable name")
     }
@@ -120,13 +125,9 @@ func checkVar(variable *string)(error){
 }
 
 func setVars(variables *string){
-    // TODO: heroku cli funny when there are spaces in var value
-    *variables = strings.ReplaceAll(*variables, "\n", " ")
-    *variables = strings.ReplaceAll(*variables, "\"", "")
-
     command := exec.Command("heroku", "config:set", "-a", appName)
 
-    for _, arg := range strings.Split(*variables, " "){
+    for _, arg := range strings.Split(*variables, "\n"){
         command.Args = append(command.Args, arg)
     }
 
