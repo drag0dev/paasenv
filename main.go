@@ -8,27 +8,23 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
-    "time"
-    arg "github.com/alexflint/go-arg"
+	"time"
+	arg "github.com/alexflint/go-arg"
 )
 
-var fileName string
-var saveFileName string
-var appName string
-var option string
-
 var args struct{
-    Heroku bool `arg:"-h,--heroku"`
-    Fly bool `arg:"-f,--fly"`
-    Dkeep bool `arg:"--dk,--d-keep" help:"delete and keep env vars"`
-    Del bool `arg:"--d, --delete" help:"delete env vars"`
-    Path string `arg:"required,-p,--path" help:"path to the file with env vars"`
+    Heroku bool     `arg:"-h,--heroku"`
+    Fly bool        `arg:"-f,--fly"`
+    Dkeep bool      `arg:"--dk,--d-keep" help:"delete and keep env vars"`
+    Del bool        `arg:"--d, --delete" help:"delete env vars"`
+    App string      `arg:"required,-a,--app" help:"name of the app"`
+    Path string     `arg:"required,-p,--path" help:"path to the file with env vars"`
 }
 
 func init(){
     arg.MustParse(&args)
     if !(args.Heroku || args.Fly){
-        fmt.Println("errror: it has to be specified whether you are applying change to fly or heroku!")
+        fmt.Println("error: it has to be specified whether you are applying change to fly or heroku!")
         os.Exit(1)
     }
 }
