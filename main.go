@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+    "time"
+    arg "github.com/alexflint/go-arg"
 )
 
 var fileName string
@@ -15,42 +17,33 @@ var saveFileName string
 var appName string
 var option string
 
-func init(){
-    // get file name from args
-    if len(os.Args[1:]) <= 1 {
-        fmt.Println("Error: missing arguments!")
-        os.Exit(0)
-    }
+var args struct{
+    Heroku bool `arg:"-h,--heroku"`
+    Fly bool `arg:"-f,--fly"`
+    Dkeep bool `arg:"--dk,--d-keep" help:"delete and keep env vars"`
+    Del bool `arg:"--d, --delete" help:"delete env vars"`
+    Path string `arg:"required,-p,--path" help:"path to the file with env vars"`
+}
 
-    if os.Args[1] == "-d"{
-        // unsetting
-        option = "unset"
-        if len(os.Args[2]) == 0{
-            fmt.Println("Error: app name is missing")
-        }
-        appName = os.Args[2]
-    }else if os.Args[1] == "-dk" && len(os.Args) == 4{
-        // unsetting and saving
-        if len(os.Args[2]) == 0{
-            fmt.Println("Error: missing save file name!")
-            os.Exit(0)
-        }
-        saveFileName = os.Args[2]
-        if len(os.Args[3]) == 0{
-            fmt.Println("Error: app name is missing")
-        }
-        appName = os.Args[3]
-        option = "unset-keep"
-    }else{
-        // setting vars
-        if len(os.Args[2])==0{
-            fmt.Println("Error: env file is missing")
-            os.Exit(0)
-        }
-        fileName = os.Args[1]
-        appName = os.Args[2]
-        option = "set"
+func init(){
+    arg.MustParse(&args)
+    if !(args.Heroku || args.Fly){
+        fmt.Println("errror: it has to be specified whether you are applying change to fly or heroku!")
+        os.Exit(1)
     }
+}
+
+func generateFilename() (string) {
+    var platform string
+    if args.Fly{
+        platform = "heroku"
+    }else{
+        platform = "fly"
+    }
+    date := time.Now()
+    var dateStr = fmt.Sprintf("%d.%d.%d", date.Local().Day(), date.Local().Month(), date.Local().Year())
+    var timeStr = fmt.Sprintf("%d.%d.%d", date.Local().Hour(), date.Local().Minute(), date.Local().Second())
+    return fmt.Sprintf("%s-%s-%s", platform, dateStr, timeStr)
 }
 
 func deleteEnvVars()(error){
@@ -146,37 +139,33 @@ func setVars(variables *string){
 }
 
 func main(){
-    if option == "set"{
-        fileContents, err := os.ReadFile(fileName)
+    if !(args.Del && args.Dkeep){
+        fileContents, err := os.ReadFile(args.Path)
         if err != nil{
-            fmt.Printf("Error: cannot open file \"%s\"!\n", fileName)
-            os.Exit(0)
+            fmt.Printf("error: cannot open file \"%s\"!\n", fileName)
+            os.Exit(1)
         }
 
         fileContentsStr := string(fileContents)
         if len(fileContents) == 0 {
-            fmt.Println("Error: file empty")
-            os.Exit(0)
+            fmt.Println("error: file empty")
+            os.Exit(1)
         }
-        if fileContentsStr[len(fileContentsStr)-1] == '\n'{
-            fileContentsStr = fileContentsStr[:len(fileContentsStr)-1]
-        }
+        fileContentsStr = strings.TrimSpace(fileContentsStr)
 
         // check if all vars are valid
         for index, envVar := range strings.Split(fileContentsStr, "\n"){
             err := checkVar(&envVar)
             if err != nil{
-                fmt.Printf("Error: %s (var number: %d)\n", err, index+1)
-                os.Exit(0)
+                fmt.Printf("error: %s (var number: %d)\n", err, index+1)
+                os.Exit(1)
             }
         }
-
-        // set vars
         setVars(&fileContentsStr)
-    }else {
+    }else{
         err := deleteEnvVars()
         if err != nil{
-            fmt.Printf("Error: %s\n", err)
+            fmt.Printf("error: %s\n", err)
         }
     }
     os.Exit(0)
