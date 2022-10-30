@@ -43,7 +43,7 @@ func generateFilename() (string) {
 }
 
 func deleteEnvVars()(error){
-    out, err := exec.Command("heroku", "config", "-a", appName, "--json").CombinedOutput()
+    out, err := exec.Command("heroku", "config", "-a", args.App, "--json").CombinedOutput()
     if err != nil{
         fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
         return errors.New(fmt.Sprintf("error getting currently set variables: %s", err))
@@ -57,7 +57,7 @@ func deleteEnvVars()(error){
         return errors.New(fmt.Sprintf("error unmarshaling currently set variables: %s", err))
     }
 
-    unsetCommand := exec.Command("heroku", "config:unset", "-a", appName)
+    unsetCommand := exec.Command("heroku", "config:unset", "-a", args.App)
 
     for key := range herokuJSON{
         unsetCommand.Args = append(unsetCommand.Args, key)
@@ -75,7 +75,7 @@ func deleteEnvVars()(error){
         fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
     }
 
-    if option == "unset-keep"{
+    if args.Dkeep{
         var fileOutputString string
         for key, value := range herokuJSON{
             fileOutputString += fmt.Sprintf("%s=%s\n", key, value)
@@ -83,7 +83,7 @@ func deleteEnvVars()(error){
 
         fileOutputString = fileOutputString[:len(fileOutputString)-1]
 
-        err = os.WriteFile(saveFileName, []byte(fileOutputString), 0666)
+        err = os.WriteFile(generateFilename(), []byte(fileOutputString), 0666)
         if err != nil{
             fmt.Printf("Error saving vars to file: %s\n", err)
         }else{
@@ -104,7 +104,7 @@ func checkVar(variable *string)(error){
         return errors.New("missing variable value")
     }
 
-    // name must only consist of uppercase letters, digits and _
+    // name must only consist of letters, digits and _
     isAlNumeric := regexp.MustCompile(`^[a-zA-Z_]+[a-zA-Z0-9_]*$`)
     if !isAlNumeric.MatchString(variableSplit[0]){
         return errors.New("error in variable name")
@@ -114,23 +114,65 @@ func checkVar(variable *string)(error){
 }
 
 func setVars(variables *string){
-    command := exec.Command("heroku", "config:set", "-a", appName)
+    if args.Heroku{
+        command := exec.Command("heroku", "config:set", "-a", args.App)
 
-    for _, arg := range strings.Split(*variables, "\n"){
-        command.Args = append(command.Args, arg)
-    }
+        for _, arg := range strings.Split(*variables, "\n"){
+            command.Args = append(command.Args, arg)
+        }
 
-    out, err := command.CombinedOutput()
-    if err != nil {
-        fmt.Printf("Error: error setting vars: \033[0;31m%s\033[0m\n", err)
-        fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
-        os.Exit(0)
-    }else if strings.Index(string(out), "Enter your Heroku credentials") != -1{
-        fmt.Println("\033[0;31mFirst log into heroku cli then run this script!\033[0m")
-    }else if strings.Index(string(out), "and restarting") != -1{
-        fmt.Println("\033[0;34mVars sucessfully set!\033[0m")
-    }else{
-        fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
+        out, err := command.CombinedOutput()
+        if err != nil {
+            fmt.Printf("error: setting vars: \033[0;31m%s\033[0m\n", err)
+            fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
+            os.Exit(1)
+        }else if strings.Index(string(out), "Enter your Heroku credentials") != -1{
+            fmt.Println("\033[0;31mFirst log into heroku cli then run this script!\033[0m")
+            os.Exit(1)
+        }else if strings.Index(string(out), "and restarting") != -1{
+            fmt.Println("\033[0;34mVars successfully set!\033[0m")
+        }else{
+            fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
+            os.Exit(1)
+        }
+    }else{ // setting fly vars
+        command := exec.Command("flyctl", "secrets", "set", "-a", args.App)
+        for _, arg := range strings.Split(*variables, "\n"){
+            command.Args = append(command.Args, arg)
+        }
+
+        outCh := make(chan string)
+        errCh := make(chan error)
+        go func(){
+            out, err := command.CombinedOutput()
+            outCh <- string(out)
+            errCh <- err
+        }()
+
+        var out string
+        var err error
+        select {
+            case <-time.After(60 * time.Second):
+                fmt.Println("60 seconds passed, assuming success")
+                os.Exit(0)
+            case outTemp := <-outCh: // this is a really odd way of doing this
+                out = outTemp
+                err = <-errCh
+        }
+
+        if err != nil{
+            fmt.Printf("error: settings vars: %s", err)
+            fmt.Printf("flyctl output: \n%s", string(out))
+            os.Exit(1)
+        }else if strings.Index(string(out), "login with") != -1{
+            fmt.Printf("first log into flyctl the run this script!")
+            os.Exit(1)
+        }else if strings.Index(string(out), "Release") != -1{
+            fmt.Println("vars successfully set!")
+        }else{
+            fmt.Printf("flyctl output: \n%s", string(out))
+            os.Exit(1)
+        }
     }
 }
 
@@ -138,7 +180,7 @@ func main(){
     if !(args.Del && args.Dkeep){
         fileContents, err := os.ReadFile(args.Path)
         if err != nil{
-            fmt.Printf("error: cannot open file \"%s\"!\n", fileName)
+            fmt.Printf("error: cannot open file \"%s\"!\n", args.Path)
             os.Exit(1)
         }
 
