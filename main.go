@@ -15,8 +15,8 @@ import (
 var args struct{
     Heroku bool     `arg:"-h,--heroku"`
     Fly bool        `arg:"-f,--fly"`
-    Dkeep bool      `arg:"--dk,--d-keep" help:"delete and keep env vars"`
-    Del bool        `arg:"--d, --delete" help:"delete env vars"`
+    Dkeep bool      `arg:"--d-keep" help:"delete and keep env vars"`
+    Del bool        `arg:"-d,--delete" help:"delete env vars"`
     App string      `arg:"required,-a,--app" help:"name of the app"`
     Path string     `arg:"required,-p,--path" help:"path to the file with env vars"`
 }
@@ -42,52 +42,103 @@ func generateFilename() (string) {
     return fmt.Sprintf("%s-%s-%s", platform, dateStr, timeStr)
 }
 
+func flyPrompt() (bool){
+    var response string
+    for{
+        fmt.Print("Fly variables cannot be saved, continue? (y/n): ")
+        fmt.Scanln(&response)
+        upperResponse := strings.ToUpper(response)
+        if upperResponse == "Y"{
+            return true;
+        }else if upperResponse == "N"{
+            return false;
+        }
+    }
+}
+
 func deleteEnvVars()(error){
-    out, err := exec.Command("heroku", "config", "-a", args.App, "--json").CombinedOutput()
-    if err != nil{
-        fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
-        return errors.New(fmt.Sprintf("error getting currently set variables: %s", err))
-    }
-
-    var herokuJSON map[string]string
-
-    err = json.Unmarshal(out, &herokuJSON)
-    if err != nil{
-        fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
-        return errors.New(fmt.Sprintf("error unmarshaling currently set variables: %s", err))
-    }
-
-    unsetCommand := exec.Command("heroku", "config:unset", "-a", args.App)
-
-    for key := range herokuJSON{
-        unsetCommand.Args = append(unsetCommand.Args, key)
-    }
-
-    out, err = unsetCommand.CombinedOutput()
-    if err != nil{
-        fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
-        return errors.New(fmt.Sprintf("error unsetting variables: %s", err))
-    }else if strings.Index(string(out), "done") != -1{
-        fmt.Println("\033[0;34mVars sucessfully unset!\033[0m")
-    }else if strings.Index(string(out), "Enter your Heroku credentials") != -1{
-        fmt.Println("\033[0;31mFirst log into heroku cli then run this script!\033[0m")
-    }else{
-        fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
-    }
-
-    if args.Dkeep{
-        var fileOutputString string
-        for key, value := range herokuJSON{
-            fileOutputString += fmt.Sprintf("%s=%s\n", key, value)
+    if args.Heroku{
+        out, err := exec.Command("heroku", "config", "-a", args.App, "--json").CombinedOutput()
+        if err != nil{
+            fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
+            return errors.New(fmt.Sprintf("error getting currently set variables: %s", err))
         }
 
-        fileOutputString = fileOutputString[:len(fileOutputString)-1]
+        var herokuJSON map[string]string
 
-        err = os.WriteFile(generateFilename(), []byte(fileOutputString), 0666)
+        err = json.Unmarshal(out, &herokuJSON)
         if err != nil{
-            fmt.Printf("Error saving vars to file: %s\n", err)
+            fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
+            return errors.New(fmt.Sprintf("error unmarshaling currently set variables: %s", err))
+        }
+
+        unsetCommand := exec.Command("heroku", "config:unset", "-a", args.App)
+
+        for key := range herokuJSON{
+            unsetCommand.Args = append(unsetCommand.Args, key)
+        }
+
+        out, err = unsetCommand.CombinedOutput()
+        if err != nil{
+            fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
+            return errors.New(fmt.Sprintf("error unsetting variables: %s", err))
+        }else if strings.Index(string(out), "done") != -1{
+            fmt.Println("\033[0;34mVars sucessfully unset!\033[0m")
+        }else if strings.Index(string(out), "Enter your Heroku credentials") != -1{
+            fmt.Println("\033[0;31mFirst log into heroku cli then run this script!\033[0m")
         }else{
-            fmt.Println("\033[0;34mUnset vars successfully saved!\033[0m")
+            fmt.Printf("Heroku output:\n\033[0;32m%s\033[0m", string(out))
+        }
+        if args.Dkeep{
+            var fileOutputString string
+            for key, value := range herokuJSON{
+                fileOutputString += fmt.Sprintf("%s=%s\n", key, value)
+            }
+
+            fileOutputString = fileOutputString[:len(fileOutputString)-1]
+
+            err = os.WriteFile(generateFilename(), []byte(fileOutputString), 0666)
+            if err != nil{
+                fmt.Printf("Error saving vars to file: %s\n", err)
+            }else{
+                fmt.Println("\033[0;34mUnset vars successfully saved!\033[0m")
+            }
+        }
+    }else if args.Fly{
+        // get already set vars
+        out, err := exec.Command("flyctl", "secrets", "list","-a", args.App, "-j").CombinedOutput()
+        if err != nil {
+            fmt.Printf("error: getting names of the vars already set: %s\n", err)
+            fmt.Printf("fly output: \n%s\n", string(out))
+            os.Exit(1)
+        }
+
+        var flyJson []struct{
+            Name string `json:"Name"`
+        }
+        err = json.Unmarshal(out, &flyJson)
+        if err != nil{
+            fmt.Printf("error: unmarshaling name of the variables: %s\n", err)
+            os.Exit(1)
+        }
+
+        command := exec.Command("flyctl", "secrets", "unset", "--detach", "-a", args.App)
+        for _, item := range flyJson{
+            command.Args = append(command.Args, item.Name)
+        }
+
+        if len(flyJson) == 0{
+            fmt.Println("No env vars to unset!")
+            os.Exit(0)
+        }
+
+        out, err = command.CombinedOutput()
+        if err != nil{
+            fmt.Printf("error: unsetting vars: %s\n", err)
+            fmt.Printf("fly output: \n%s\n", string(out))
+            os.Exit(1)
+        }else{
+            fmt.Println("Unset vars successfully!\n")
         }
     }
 
@@ -177,7 +228,7 @@ func setVars(variables *string){
 }
 
 func main(){
-    if !(args.Del && args.Dkeep){
+    if !(args.Del || args.Dkeep){
         fileContents, err := os.ReadFile(args.Path)
         if err != nil{
             fmt.Printf("error: cannot open file \"%s\"!\n", args.Path)
@@ -201,6 +252,9 @@ func main(){
         }
         setVars(&fileContentsStr)
     }else{
+        if (args.Fly && args.Dkeep) && !flyPrompt(){
+            os.Exit(0)
+        }
         err := deleteEnvVars()
         if err != nil{
             fmt.Printf("error: %s\n", err)
