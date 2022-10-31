@@ -23,13 +23,17 @@ var args struct{
     Dkeep bool      `arg:"--d-keep" help:"delete and keep env vars"`
     Del bool        `arg:"-d,--delete" help:"delete env vars"`
     App string      `arg:"required,-a,--app" help:"name of the app"`
-    Path string     `arg:"required,-p,--path" help:"path to the file with env vars"`
+    Path string     `arg:"-p,--path" help:"path to the file with env vars"`
 }
 
 func init(){
     arg.MustParse(&args)
     if !(args.Heroku || args.Fly){
         fmt.Printf("%s: it has to be specified whether you are applying change to fly or heroku!\n", red("error"))
+        os.Exit(1)
+    }
+    if !(args.Del || args.Dkeep) && len(args.Path) == 0{
+        fmt.Printf("%s: path of new env vars is required!\n", red("error"))
         os.Exit(1)
     }
 }
