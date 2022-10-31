@@ -56,6 +56,25 @@ func flyPrompt() (bool){
     }
 }
 
+func checkVar(variable *string)(error){
+    var variableSplit []string = strings.Split(*variable, "=")
+    if len(variableSplit) != 2 {
+        return errors.New("missing parts of the variable")
+    }else if len(variableSplit[0]) == 0 {
+        return errors.New("missing variable name")
+    }else if len(variableSplit[1]) == 0 {
+        return errors.New("missing variable value")
+    }
+
+    // name must only consist of letters, digits and _
+    isAlNumeric := regexp.MustCompile(`^[a-zA-Z_]+[a-zA-Z0-9_]*$`)
+    if !isAlNumeric.MatchString(variableSplit[0]){
+        return errors.New("error in variable name")
+    }
+
+    return nil
+}
+
 func deleteEnvVars()(error){
     if args.Heroku{
         out, err := exec.Command("heroku", "config", "-a", args.App, "--json").CombinedOutput()
@@ -145,25 +164,6 @@ func deleteEnvVars()(error){
     return nil
 }
 
-func checkVar(variable *string)(error){
-    var variableSplit []string = strings.Split(*variable, "=")
-    if len(variableSplit) != 2 {
-        return errors.New("missing parts of the variable")
-    }else if len(variableSplit[0]) == 0 {
-        return errors.New("missing variable name")
-    }else if len(variableSplit[1]) == 0 {
-        return errors.New("missing variable value")
-    }
-
-    // name must only consist of letters, digits and _
-    isAlNumeric := regexp.MustCompile(`^[a-zA-Z_]+[a-zA-Z0-9_]*$`)
-    if !isAlNumeric.MatchString(variableSplit[0]){
-        return errors.New("error in variable name")
-    }
-
-    return nil
-}
-
 func setVars(variables *string){
     if args.Heroku{
         command := exec.Command("heroku", "config:set", "-a", args.App)
@@ -187,30 +187,12 @@ func setVars(variables *string){
             os.Exit(1)
         }
     }else{ // setting fly vars
-        command := exec.Command("flyctl", "secrets", "set", "-a", args.App)
+        command := exec.Command("flyctl", "secrets", "set", "--detach", "-a", args.App)
         for _, arg := range strings.Split(*variables, "\n"){
             command.Args = append(command.Args, arg)
         }
 
-        outCh := make(chan string)
-        errCh := make(chan error)
-        go func(){
-            out, err := command.CombinedOutput()
-            outCh <- string(out)
-            errCh <- err
-        }()
-
-        var out string
-        var err error
-        select {
-            case <-time.After(60 * time.Second):
-                fmt.Println("60 seconds passed, assuming success")
-                os.Exit(0)
-            case outTemp := <-outCh: // this is a really odd way of doing this
-                out = outTemp
-                err = <-errCh
-        }
-
+        out, err := command.CombinedOutput()
         if err != nil{
             fmt.Printf("error: settings vars: %s", err)
             fmt.Printf("flyctl output: \n%s", string(out))
