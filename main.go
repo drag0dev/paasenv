@@ -18,7 +18,7 @@ var yellow func (a ...interface{}) string = color.New(color.FgYellow).SprintFunc
 var green func (a ...interface{}) string = color.New(color.FgGreen).SprintFunc()
 
 var args struct{
-    Heroku bool     `arg:"-h,--heroku"`
+    Heroku bool     `arg:"--heroku"`
     Fly bool        `arg:"-f,--fly"`
     Dkeep bool      `arg:"--d-keep" help:"delete and keep env vars"`
     Del bool        `arg:"-d,--delete" help:"delete env vars"`
@@ -29,11 +29,11 @@ var args struct{
 func init(){
     arg.MustParse(&args)
     if !(args.Heroku || args.Fly){
-        fmt.Printf("%s: it has to be specified whether you are applying change to fly or heroku!\n", red("error"))
+        fmt.Printf("%s: it has to be specified whether you are applying changes to fly or heroku!\n", red("error"))
         os.Exit(1)
     }
     if !(args.Del || args.Dkeep) && len(args.Path) == 0{
-        fmt.Printf("%s: path of new env vars is required!\n", red("error"))
+        fmt.Printf("%s: path to env vars is required!\n", red("error"))
         os.Exit(1)
     }
 }
@@ -41,9 +41,9 @@ func init(){
 func generateFilename() (string) {
     var platform string
     if args.Fly{
-        platform = "heroku"
-    }else{
         platform = "fly"
+    }else{
+        platform = "heroku"
     }
     date := time.Now()
     var dateStr = fmt.Sprintf("%d.%d.%d", date.Local().Day(), date.Local().Month(), date.Local().Year())
@@ -78,7 +78,7 @@ func checkVar(variable *string)(error){
     // name must only consist of letters, digits and _
     isAlNumeric := regexp.MustCompile(`^[a-zA-Z_]+[a-zA-Z0-9_]*$`)
     if !isAlNumeric.MatchString(variableSplit[0]){
-        return errors.New("error in variable name")
+        return errors.New("variable name")
     }
 
     return nil
@@ -115,7 +115,7 @@ func deleteEnvVars(){
             os.Exit(1)
         }else if strings.Index(string(out), "done") != -1{
             fmt.Println(green("vars successfully unset!"))
-        }else if strings.Index(string(out), "Enter your Heroku credentials") != -1{
+        }else if strings.Index(string(out), "login") != -1{
             fmt.Println(red("first log into heroku cli then run this script!"))
             os.Exit(1)
         }else{
@@ -168,10 +168,16 @@ func deleteEnvVars(){
         out, err = command.CombinedOutput()
         if err != nil{
             fmt.Printf("%s: unsetting vars: %s\n", red("error"), err)
-            fmt.Printf("fly output: \n%s\n", string(out))
+            fmt.Printf("flyctl output: \n%s", yellow(string(out)))
             os.Exit(1)
-        }else{
+        }else if strings.Index(string(out), "access token") != -1{
+            fmt.Println(red("first log into flyctl the run this script!"))
+            os.Exit(1)
+        }else if strings.Index(string(out), "Release") != -1{
             fmt.Println(green("unset vars successfully!"))
+        }else{
+            fmt.Printf("flyctl output: \n%s\n", yellow(string(out)))
+            os.Exit(1)
         }
     }
 }
@@ -189,7 +195,7 @@ func setVars(variables *string){
             fmt.Printf("%s: setting vars: %s\n", red("error"), yellow(err))
             fmt.Printf("heroku output: \n%s\n", yellow(string(out)))
             os.Exit(1)
-        }else if strings.Index(string(out), "Enter your Heroku credentials") != -1{
+        }else if strings.Index(string(out), "login") != -1{
             fmt.Println(red("first log into heroku cli then run this script!"))
             os.Exit(1)
         }else if strings.Index(string(out), "and restarting") != -1{
@@ -209,7 +215,7 @@ func setVars(variables *string){
             fmt.Printf("%s: settings vars: %s\n", red("error"), err)
             fmt.Printf("flyctl output: \n%s", yellow(string(out)))
             os.Exit(1)
-        }else if strings.Index(string(out), "login with") != -1{
+        }else if strings.Index(string(out), "access token") != -1{
             fmt.Println(red("first log into flyctl the run this script!"))
             os.Exit(1)
         }else if strings.Index(string(out), "Release") != -1{
@@ -222,6 +228,7 @@ func setVars(variables *string){
 }
 
 func main(){
+    fmt.Println(generateFilename())
     if !(args.Del || args.Dkeep){
         fileContents, err := os.ReadFile(args.Path)
         if err != nil{
