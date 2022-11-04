@@ -1,24 +1,23 @@
-# HRKVAR
-Script that takes env vars from a file and sets them for a specified heroku app. Heroku CLI is required for this script to work. Should work fine on all systems.
-
+# PAASENV
+Braindead personal script that takes env vars from a file and sets them for a specified heroku or fly app. Heroku CLI/flyctl is required for this script to work. Should work fine on all systems.
 ## BUILD
-    go build -o hrkvar main.go
+    go build -o whatever-you-want main.go
 Build and put the binary in $PATH or bin folder
 ## USAGE
 Providing file name and app name will set the vars
 
-    hrkvar path/to/file app-name
+    paasenv --heroku (--fly) -p path/to/file -a app-name
 
-d flag means to unset all variables
+**d** switch means to unset all variables
 
-    hrkvar -d app-name
+    paasenv --heroku (--fly) -d -a app-name
 
-dk flag means to unset all vars and save (keep) them in a file
+**d-keep** switch means to unset all vars and save them in a file, however it is impossible to do it with fly
 
-    hrkvar -dk path/to/save-file app-name
+    paasenv --heroku -d-keep -a app-name
 
 ## NOTES
-* you have to be logged in Heroku CLI
+* you have to be logged in Heroku CLI/flyctl
 * env var name consist of letters, numbers and _ only
 * double quotes at the beginning and end are removed automatically
 * if your env var value is supposed to have double quotes at the beginning and end put additional pair of double quotes around
