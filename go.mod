@@ -1,4 +1,4 @@
-module drag0dev/hrkvar
+module drag0dev/paasenv
 
 go 1.18
 
